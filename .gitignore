@@ -1,0 +1,40 @@
+# ===== 通用系统/临时 =====
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+
+# ===== PlatformIO / ESP32 固件中间产物 =====
+.pio/
+compile_commands.json
+.cache/
+.uploads/
+.trae/
+
+# ===== Flutter / Dart 中间产物 =====
+.dart_tool/
+.pub-cache/
+.pub/
+.flutter-plugins-dependencies
+build/
+coverage/
+
+# ===== Android 原生构建产物（NDK 缓存特别大） =====
+**/android/ndk/
+**/android/.gradle/
+**/android/.kotlin/
+**/android/.cxx/
+**/android/build/
+**/android/app/build/
+
+# ===== IDE =====
+.idea/
+.vscode/
+
+# ===== 签名证书 / 密钥（严禁入库） =====
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+*.pem
