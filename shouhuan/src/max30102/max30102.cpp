@@ -51,6 +51,7 @@ static bool writeRegister(uint8_t reg, uint8_t val) {
  * @return true表示初始化成功，false表示I2C通信失败或器件ID不匹配
  */
 bool MAX30102Module::begin() {
+    Wire.setTimeOut(50); // 设置 50ms 硬件超时保护，防止从机未应答时主线程死锁卡死
     Wire.setClock(100000);
     delay(10);
 
@@ -194,22 +195,37 @@ bool MAX30102Module::begin() {
 void MAX30102Module::update() {
     unsigned long loopStartTime = millis();
 
+    static int i2cErrCount = 0;
+
     Wire.beginTransmission(MAX30102_ADDR);
     Wire.write(0x04);
-    if (Wire.endTransmission(true) != 0) return;
+    if (Wire.endTransmission(true) != 0) {
+        i2cErrCount++;
+        if (i2cErrCount > 10) {
+            Wire.begin(I2C_SDA, I2C_SCL);
+            Wire.setTimeOut(50);
+            i2cErrCount = 0;
+        }
+        return;
+    }
+    i2cErrCount = 0;
 
     if (Wire.requestFrom(MAX30102_ADDR, 3) < 3) return;
 
     uint8_t wrPtr = Wire.read();
-    Wire.read();
+    uint8_t ovfCnt = Wire.read();
     uint8_t rdPtr = Wire.read();
 
-    int samplesAvailable = (wrPtr - rdPtr + 32) % 32;
+    int samplesAvailable = 0;
+    if (ovfCnt > 0) {
+        samplesAvailable = 32;
+    } else {
+        samplesAvailable = (wrPtr - rdPtr + 32) % 32;
+    }
 
-    static unsigned long lastPtrPrint = 0;
-    if (millis() - lastPtrPrint > 2000) {
-        lastPtrPrint = millis();
-        Serial.printf("[MAX30102] wrPtr=%d rdPtr=%d available=%d\n", wrPtr, rdPtr, samplesAvailable);
+    // 限制单次最大读取 20 个样本 (120 字节)，防止超越 Wire 库 128 字节接收缓冲区上限
+    if (samplesAvailable > 20) {
+        samplesAvailable = 20;
     }
 
     if (samplesAvailable == 0) return;
@@ -232,7 +248,7 @@ void MAX30102Module::update() {
         long red = ((long)redHi << 16 | (long)redMid << 8 | redLo) & 0x3FFFF;
         long ir = ((long)irHi << 16 | (long)irMid << 8 | irLo) & 0x3FFFF;
 
-        unsigned long sampleTime = loopStartTime + i * 2;
+        unsigned long sampleTime = millis();
         processSingleSample(red, ir, sampleTime);
     }
 }
@@ -265,13 +281,6 @@ void MAX30102Module::processSingleSample(long red, long ir, unsigned long curren
 
     // ====== NLMS运动伪影滤波（始终执行以更新权重—问题5 预热） ======
     long irFiltered = motionFilter.process(ir, _latestAx, _latestAy, _latestAz);
-
-// 强制调试输出：每2秒打印一次原始PPG值
-    static unsigned long lastRawPrint = 0;
-    if (millis() - lastRawPrint > 2000) {
-        lastRawPrint = millis();
-        Serial.printf("[MAX30102] raw_ir=%ld raw_red=%ld (滤波后=%ld)\n", ir, red, irFiltered);
-    }
 
     // ====== 预热检查（问题5） ======
     // 预热期间滤波器权重从0开始收敛，跳过心率血氧计算
@@ -307,11 +316,9 @@ void MAX30102Module::processSingleSample(long red, long ir, unsigned long curren
         }
         irACMax = ir;
         irACMin = ir;
-        Serial.printf("[信息] 皮肤已贴合  | 信号质量=0\n");
     } else if (!data.fingerOn && _wasFingerOn) {
         lastFingerOffTime = currentTime;
         lastValidBeatTime = currentTime;
-        Serial.printf("[信息] 皮肤已移开  | 上次有效值: 心率=%d 血氧=%d\n", data.heartRate, data.spo2);
     }
     _wasFingerOn = data.fingerOn;
 
@@ -323,18 +330,15 @@ void MAX30102Module::processSingleSample(long red, long ir, unsigned long curren
     }
 
     if (data.fingerOn) {
-        // ====== 心率计算（问题1.2：首次心跳检查） ======
-        // 使用原始ir信号而非irFiltered，因为checkForBeat内置了DC去除和低通滤波
-        // 运动滤波后的信号经过双重滤波会压平AC脉动，导致阈值检测失效
+        // ====== 心率计算（首次心跳检查） ======
         if (hrAlgo.checkForBeat(ir)) {
-            Serial.printf("[MAX30102] 检测到心跳 ir=%ld\n", ir);
             long lastBeat = hrAlgo.getLastBeatTime();
             if (lastBeat != 0) {  // 非首次心跳才计算心率
                 long delta = currentTime - lastBeat;
                 int hr = hrAlgo.calculateHeartRate(delta);
-                if (hr > 0) {
+                // SQI保护：仅在信号质量 >= 20 时才更新心率，防止剧烈甩手伪影破坏有效心率
+                if (hr > 0 && data.signalQuality >= 20) {
                     data.heartRate = hr;
-                    Serial.printf("[MAX30102] 心率=%d bpm (delta=%ldms)\n", hr, delta);
                 }
             }
             hrAlgo.setLastBeatTime(currentTime);

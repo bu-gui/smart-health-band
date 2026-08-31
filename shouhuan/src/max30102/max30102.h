@@ -63,6 +63,11 @@ public:
      */
     void setAccelData(float ax, float ay, float az);
 
+    /**
+     * 获取上一次成功捕获有效心拍的时间戳(ms)
+     */
+    unsigned long getLastBeatTime() const { return lastValidBeatTime; }
+
 private:
     /** PPG信号采样缓冲区大小(100个样本，800Hz下覆盖125ms) */
     static const int SAMPLE_COUNT = 100;

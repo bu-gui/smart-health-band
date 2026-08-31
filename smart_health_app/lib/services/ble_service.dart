@@ -14,6 +14,8 @@ class BleService {
   BluetoothCharacteristic? _writeCharacteristic;
   BluetoothCharacteristic? _readCharacteristic;
   StreamSubscription? _notifySubscription;
+  StreamSubscription? _scanSubscription;
+  StreamSubscription? _connectionStateSubscription;
 
   bool _isScanning = false;
   bool _isConnected = false;
@@ -36,7 +38,8 @@ class BleService {
     if (_isScanning) return;
     _isScanning = true;
 
-    FlutterBluePlus.scanResults.listen((results) {
+    _scanSubscription?.cancel();
+    _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
       final filtered = results.where((r) => r.device.platformName == _deviceName).toList();
       if (filtered.isNotEmpty) {
         onScanResults?.call(filtered);
@@ -83,7 +86,8 @@ class BleService {
       }
 
       // 监听断开
-      device.connectionState.listen((state) {
+      _connectionStateSubscription?.cancel();
+      _connectionStateSubscription = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
           _isConnected = false;
           onConnectionStateChanged?.call(false);
@@ -104,6 +108,10 @@ class BleService {
   Future<void> disconnect() async {
     await _notifySubscription?.cancel();
     _notifySubscription = null;
+    await _scanSubscription?.cancel();
+    _scanSubscription = null;
+    await _connectionStateSubscription?.cancel();
+    _connectionStateSubscription = null;
     await _device?.disconnect();
     _device = null;
     _writeCharacteristic = null;
@@ -181,6 +189,16 @@ class BleService {
     }
   }
 
+  /// 实时读取已连接设备的 RSSI 信号强度
+  Future<int> readRssi() async {
+    if (_device == null || !_isConnected) return -100;
+    try {
+      return await _device!.readRssi();
+    } catch (e) {
+      return -100;
+    }
+  }
+
   /// 发送预设指令
   Future<bool> resetSteps() => sendCommand('reset_steps');
   Future<bool> setPage(int page) => sendCommand('set_page:$page');
@@ -190,5 +208,7 @@ class BleService {
 
   void dispose() {
     _notifySubscription?.cancel();
+    _scanSubscription?.cancel();
+    _connectionStateSubscription?.cancel();
   }
 }

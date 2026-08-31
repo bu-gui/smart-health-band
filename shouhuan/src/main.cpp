@@ -169,12 +169,13 @@ void loop() {
     sysManager.setBatteryLevel(pwrStatus.percentage);
     int currentPage = button.getPage();
 
-    // 步数增量持久化（防 NVS 频繁写入磨损）
+    // 步数增量持久化（防 NVS 频繁写入磨损，增量>=50步或间隔>=5分钟才擦写 Flash）
     static int lastSavedSteps = -1;
     static unsigned long lastSaveTime = 0;
-    if (motionData.steps != lastSavedSteps &&
-        (motionData.steps - lastSavedSteps >= STEPS_SAVE_THRESHOLD ||
-         (lastSaveTime != 0 && now - lastSaveTime >= STEPS_SAVE_INTERVAL))) {
+    if (lastSavedSteps == -1 ||
+        (motionData.steps != lastSavedSteps &&
+         (motionData.steps - lastSavedSteps >= STEPS_SAVE_THRESHOLD ||
+          (lastSaveTime != 0 && now - lastSaveTime >= STEPS_SAVE_INTERVAL)))) {
         prefs.begin(NVS_NAMESPACE, false);
         prefs.putInt(NVS_KEY_STEPS, motionData.steps);
         prefs.end();
@@ -286,14 +287,33 @@ void loop() {
         int mState = motionData.motionState;
         if (mState < 0 || mState > 3) mState = 0;
 
-        Serial.printf("[+%04ds] 心率:%03d 血氧:%03d 步数:%05d 贴合:%s 信号:%02d 运动:%-6s 跌倒:%s 蓝牙:%s 页面:%d 电源:%.2fV %d%%%s\n",
+        unsigned long lastBeatTime = max30102.getLastBeatTime();
+        float beatAgeSec = (healthData.fingerOn && healthData.heartRate > 0 && lastBeatTime > 0 && now >= lastBeatTime)
+            ? (now - lastBeatTime) / 1000.0f
+            : 0.0f;
+        const char* noiseNotice = (mState >= MOTION_MODERATE) ? "[运动干扰]" : "";
+
+        char stepStatusBuf[16];
+        int candidate = mpu6050.getPedometerCandidate();
+        bool established = mpu6050.isPedometerEstablished();
+        if (established) {
+            snprintf(stepStatusBuf, sizeof(stepStatusBuf), "%05d[稳]", motionData.steps);
+        } else if (candidate > 0) {
+            snprintf(stepStatusBuf, sizeof(stepStatusBuf), "%05d(候%d)", motionData.steps, candidate);
+        } else {
+            snprintf(stepStatusBuf, sizeof(stepStatusBuf), "%05d", motionData.steps);
+        }
+
+        Serial.printf("[+%04ds] 心率:%03d 血氧:%03d 步数:%-10s 贴合:%s 信号:%02d 运动:%-6s 拍距:%.1fs%s 跌倒:%s 蓝牙:%s 页面:%d 电源:%.2fV %d%%%s\n",
             now / 1000,
             healthData.heartRate,
             healthData.spo2,
-            motionData.steps,
+            stepStatusBuf,
             healthData.fingerOn ? "接触" : "离开",
             healthData.signalQuality,
             motionNames[mState],
+            beatAgeSec,
+            noiseNotice,
             motionData.fallDetected ? "是" : "否",
             systemStatus.bleConnected ? "连" : "断",
             currentPage,

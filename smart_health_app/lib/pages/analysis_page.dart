@@ -157,6 +157,8 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
         validCount++;
         if (min > 0 && min < minHr) minHr = min;
         if (max > maxHr) maxHr = max;
+      } else {
+        spots.add(FlSpot(i.toDouble(), 0));
       }
 
       // 生成标签
@@ -208,6 +210,8 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
         sumSpo2 += avgSpo2;
         validCount++;
         if (min < minSpo2) minSpo2 = min;
+      } else {
+        spots.add(FlSpot(i.toDouble(), 0));
       }
 
       // 生成标签

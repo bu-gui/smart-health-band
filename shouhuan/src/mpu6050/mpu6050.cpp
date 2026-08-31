@@ -14,7 +14,7 @@ void MPU6050Module::writeReg(uint8_t regAddr, uint8_t value) {
 void MPU6050Module::readReg(uint8_t regAddr, uint8_t* buffer, uint8_t len) {
     Wire.beginTransmission(MPU6050_ADDR);
     Wire.write(regAddr);
-    Wire.endTransmission(false);
+    Wire.endTransmission(true);
     Wire.requestFrom(MPU6050_ADDR, len, true);
     for (uint8_t i = 0; i < len; i++) {
         buffer[i] = Wire.read();
@@ -26,15 +26,18 @@ void MPU6050Module::readReg(uint8_t regAddr, uint8_t* buffer, uint8_t len) {
  *
  * 配置流程：
  * 1. 验证WHO_AM_I寄存器确认通信正常
- * 2. 唤醒传感器，选择PLL时钟源
- * 3. 配置采样率为100Hz（SMPLRT_DIV=9）
- * 4. 配置DLPF带宽约41Hz（DLPF_CFG=0x03）
- * 5. 设置陀螺仪量程±250°/s
- * 6. 设置加速度计量程±4g
+ * 2. 软件复位传感器（DEVICE_RESET=1），恢复上电默认值
+ * 3. 唤醒传感器，选择PLL时钟源
+ * 4. 配置采样率为100Hz（SMPLRT_DIV=9）
+ * 5. 配置DLPF带宽约41Hz（DLPF_CFG=0x03）
+ * 6. 设置陀螺仪量程±250°/s
+ * 7. 设置加速度计量程±4g
  *
  * @return true表示初始化成功
  */
 bool MPU6050Module::begin() {
+    Wire.setTimeOut(50); // 设置 50ms 硬件超时保护
+
     // ====== 验证WHO_AM_I ======
     uint8_t whoAmI;
     readReg(REG_WHO_AM_I, &whoAmI, 1);
@@ -42,7 +45,11 @@ bool MPU6050Module::begin() {
         return false;
     }
 
-    // ====== 唤醒传感器 ======
+    // ====== 软件复位 (DEVICE_RESET = 0x80) ======
+    writeReg(REG_PWR_MGMT_1, 0x80);
+    delay(100);
+
+    // ====== 唤醒传感器 (SLEEP = 0x00) ======
     writeReg(REG_PWR_MGMT_1, 0x00);
     delay(50);
 
@@ -74,7 +81,7 @@ bool MPU6050Module::begin() {
     _motionState = MotionStateRecognizer();
     _gravX = _gravY = _gravZ = 0;
     _pitch = _roll = 0;
-    _lastTime = 0;
+    _lastTime = micros();
 
     return true;
 }
@@ -107,10 +114,10 @@ void MPU6050Module::update() {
     data.gy = rawGy / GYRO_SENSITIVITY;
     data.gz = rawGz / GYRO_SENSITIVITY;
 
-    // ====== 重力分量估计（一阶低通 α=0.995） ======
-    _gravX = 0.995f * _gravX + 0.005f * data.ax;
-    _gravY = 0.995f * _gravY + 0.005f * data.ay;
-    _gravZ = 0.995f * _gravZ + 0.005f * data.az;
+    // ====== 重力分量估计（一阶低通 α=0.92 匹配 20Hz 主循环） ======
+    _gravX = 0.92f * _gravX + 0.08f * data.ax;
+    _gravY = 0.92f * _gravY + 0.08f * data.ay;
+    _gravZ = 0.92f * _gravZ + 0.08f * data.az;
 
     // 去除重力后的纯运动加速度
     float maX = data.ax - _gravX;

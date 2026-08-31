@@ -68,14 +68,12 @@ void DisplayModule::showHealthPage(int heartRate, int spo2, int steps, bool fing
     display.println("=== Health ===");
     
     // 手指状态提示
-    display.setCursor(0, 10);
     if (!fingerOn) {
         display.setTextColor(SH110X_WHITE);
+        display.setCursor(0, 20);
         display.println("Place on skin...");
-        
-        // 显示提示图标
-        display.setCursor(56, 10);
-        display.println("[--]");
+        display.setCursor(0, 36);
+        display.println("  [--]");
     } else {
         // 心率显示
         display.setCursor(0, 16);
@@ -102,21 +100,17 @@ void DisplayModule::showHealthPage(int heartRate, int spo2, int steps, bool fing
         display.print("Steps: ");
         display.println(steps);
         
-        // 信号质量显示（带条形指示）
+        // 信号质量显示（8格条形指示，避免与P1/3重叠）
         display.setCursor(0, 52);
-        display.print("Sig: ");
-        int bars = (signalQuality + 9) / 10;
-        if (bars > 10) bars = 10;
-        for (int i = 0; i < bars; i++) {
-            display.print("#");
-        }
-        for (int i = bars; i < 10; i++) {
-            display.print(".");
-        }
+        display.print("Sig:");
+        int bars = (signalQuality * 8 + 99) / 100;
+        if (bars > 8) bars = 8;
+        for (int i = 0; i < bars; i++) display.print("#");
+        for (int i = bars; i < 8; i++) display.print(".");
     }
     
-    // 页码显示
-    display.setCursor(80, 52);
+    // 页码显示在右下角 (X:102, Y:52)
+    display.setCursor(102, 52);
     display.print("P1/3");
     
     // 更新显示内容
@@ -145,29 +139,29 @@ void DisplayModule::showMotionPage(float ax, float ay, float az, float gx, float
     display.print("State: ");
     display.println(motionLabels[motionState]);
 
-    display.setCursor(0, 22);
+    display.setCursor(0, 21);
     display.print("Ax:");
     display.print(ax, 2);
-    display.setCursor(64, 22);
+    display.setCursor(64, 21);
     display.print("Ay:");
     display.println(ay, 2);
 
-    display.setCursor(0, 34);
+    display.setCursor(0, 31);
     display.print("Az:");
     display.println(az, 2);
 
-    display.setCursor(0, 46);
+    display.setCursor(0, 41);
     display.print("Gx:");
     display.print(gx, 1);
-    display.setCursor(64, 46);
+    display.setCursor(64, 41);
     display.print("Gy:");
     display.println(gy, 1);
 
-    display.setCursor(0, 58);
+    display.setCursor(0, 52);
     display.print("Gz:");
     display.print(gz, 1);
 
-    display.setCursor(88, 58);
+    display.setCursor(102, 52);
     display.print("P2/3");
 
     display.display();
@@ -203,7 +197,7 @@ void DisplayModule::showStatusPage(bool wifiConnected, bool bleEnabled, bool ble
     display.println(steps);
     
     // 页码显示
-    display.setCursor(80, 52);
+    display.setCursor(102, 52);
     display.print("P3/3");
     
     // 更新显示内容

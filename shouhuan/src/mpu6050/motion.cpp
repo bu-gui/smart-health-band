@@ -3,57 +3,89 @@
 // ==================== 计步器实现 ====================
 
 Pedometer::Pedometer()
-    : _steps(0), _state(0), _threshold(0.25f),
-      _peakIndex(0), _peakCount(0), _lastStepTime(0), _lastAccMag(0) {
+    : _steps(0), _state(0), _threshold(0.22f), _currentPeakMax(0.0f),
+      _peakIndex(0), _peakCount(0), _lastStepTime(0), _state1StartTime(0),
+      _lastAccMag(0), _candidateSteps(0), _isEstablished(false) {
     for (int i = 0; i < 5; i++) {
-        _peakValues[i] = 0.25f;
+        _peakValues[i] = 0.22f;
     }
 }
 
 /**
- * 计步器更新
+ * 计步器更新（黄金平衡防晃步架构 + 状态机卡死防护）
  *
- * 输入应为去重力后的纯运动合加速度（静止≈0g，行走≈0.2-0.8g）
+ * 输入：去重力后的纯运动合加速度（静止≈0g，行走≈0.2-0.8g）
  *
  * 算法逻辑：
- * 1. 行走时纯运动加速度周期性波动，峰值超过阈值则检测为一步
- * 2. 动态阈值 = 最近5个峰值的均值 × 0.6，自动适应步态强度
- * 3. 状态机避免在阈值附近晃动时重复计数
- * 4. 最小步间隔 250ms 防止高频抖动
+ * 1. 物理迈步黄金门槛：波峰必须 >= 0.22g，保留自然行走合加速度波峰真实高度
+ * 2. 动态阈值下限设为 0.22g，有效隔离打字/手部微小晃动 (<0.22g)
+ * 3. 连续 3 步确认机制：偶发摇 1-2 下手自动清零过滤，迈出第 3 步后实时稳定计步
+ * 4. 状态 1 增加 1.5 秒超时强行复位，彻底排除硬件噪声导致状态机死锁风险
  */
 bool Pedometer::update(float accMag) {
     unsigned long now = millis();
 
-    // ====== 状态0: 等待加速度上升超过阈值 ======
+    // 1. 动作停顿超时（>3000ms）：判定连续步态已中断，重置候选步数计数（适应散步走走停停）
+    if (_lastStepTime > 0 && (now - _lastStepTime > 3000)) {
+        _candidateSteps = 0;
+        _isEstablished = false;
+    }
+
+    // ====== 状态0: 等待加速度上升超过动态阈值 (下限 0.22g) ======
     if (_state == 0) {
         if (accMag > _threshold && accMag > _lastAccMag) {
             _state = 1;  // 进入上升状态
+            _state1StartTime = now;
+            _currentPeakMax = accMag;
         }
     }
-    // ====== 状态1: 等待加速度下降到阈值以下 ======
+    // ====== 状态1: 在波峰区域追踪极大值，等待加速度下降到阈值以下 ======
     else if (_state == 1) {
-        if (accMag < _threshold && accMag < _lastAccMag) {
-            // 确认步间隔 > 250ms
-            if (now - _lastStepTime > 250) {
-                _steps++;
-                _lastStepTime = now;
+        if (accMag > _currentPeakMax) {
+            _currentPeakMax = accMag;
+        }
 
-                // 更新峰值环形缓冲区
-                _peakValues[_peakIndex] = accMag;
+        // 状态1超时保护：如果超过1.5秒仍未下降回落，强行复位状态机，防止死锁
+        if (now - _state1StartTime > 1500) {
+            _state = 0;
+        }
+        else if (accMag < _threshold) {
+            // 确认 1: 步间隔必须 > 250ms
+            // 确认 2: 极大值必须超过物理迈步黄金门槛 0.22g
+            if ((now - _lastStepTime > 250) && (_currentPeakMax >= 0.22f)) {
+                _lastStepTime = now;
+                bool stepCounted = false;
+
+                // 连续 3 步确认逻辑：偶发甩手 1-2 下全数自动过滤，防止误计步
+                if (!_isEstablished) {
+                    _candidateSteps++;
+                    if (_candidateSteps >= 3) {
+                        _isEstablished = true;
+                        _steps += _candidateSteps; // 连续迈步达标，一次性补齐前 3 步
+                        _candidateSteps = 0;
+                        stepCounted = true;
+                    }
+                } else {
+                    _steps++; // 步态已建立，实时递增
+                    stepCounted = true;
+                }
+
+                // 将真实捕获的波峰极大值更新至环形缓冲区（避免极小值污染）
+                _peakValues[_peakIndex] = _currentPeakMax;
                 _peakIndex = (_peakIndex + 1) % 5;
                 if (_peakCount < 5) _peakCount++;
 
-                // 重新计算动态阈值
+                // 重新计算动态阈值（下限拉高至 0.22g）
                 float sum = 0;
                 for (int i = 0; i < _peakCount; i++) {
                     sum += _peakValues[i];
                 }
                 _threshold = (sum / _peakCount) * 0.6f;
-                if (_threshold < 0.15f) _threshold = 0.15f;
+                if (_threshold < 0.22f) _threshold = 0.22f;
 
                 _state = 0;
                 _lastAccMag = accMag;
-                return true;
+                return stepCounted;
             }
             _state = 0;
         }
@@ -61,9 +93,9 @@ bool Pedometer::update(float accMag) {
 
     _lastAccMag = accMag;
 
-    // 如果长时间没有步伐，降低阈值防止丢失
-    if (now - _lastStepTime > 3000 && _threshold > 0.25f) {
-        _threshold = 0.25f;
+    // 如果长时间没有步伐，默认阈值保持在黄金位 0.22g
+    if (now - _lastStepTime > 3000 && _threshold < 0.22f) {
+        _threshold = 0.22f;
     }
 
     return false;
@@ -72,13 +104,17 @@ bool Pedometer::update(float accMag) {
 void Pedometer::reset() {
     _steps = 0;
     _state = 0;
-    _threshold = 0.25f;
+    _threshold = 0.22f;
+    _currentPeakMax = 0.0f;
     _peakIndex = 0;
     _peakCount = 0;
     _lastStepTime = 0;
+    _state1StartTime = 0;
     _lastAccMag = 0;
+    _candidateSteps = 0;
+    _isEstablished = false;
     for (int i = 0; i < 5; i++) {
-        _peakValues[i] = 0;
+        _peakValues[i] = 0.22f;
     }
 }
 
@@ -98,10 +134,9 @@ FallDetector::FallDetector()
  * 四级联判状态机：
  *   NORMAL → FREE_FALL → IMPACT_CHECK → POST_FALL_WAIT → POST_FALL_ALERT
  *
- * 相比三级增加了"卧姿持续确认"阶段：
- *   触发跌倒后不会立即告警，而是等待 500ms 确认用户没有起身
- *   如果中途恢复站立(姿态<30°)则自动取消
- *   有效减少弯腰、快速坐下等场景的误报
+ * 优化修正：
+ *   - 20Hz 主循环下，连续失重帧调为 2 帧（约 100ms），适应实测跌落失重时长
+ *   - 状态转移增加 else if 避免同一帧内被后续超时逻辑冲刷覆盖
  */
 bool FallDetector::update(float accMag, float pitch, float roll) {
     unsigned long now = millis();
@@ -111,7 +146,7 @@ bool FallDetector::update(float accMag, float pitch, float roll) {
         case STATE_NORMAL:
             if (accMag < 0.4f) {
                 _freeFallCount++;
-                if (_freeFallCount > 10) {
+                if (_freeFallCount >= 2) {
                     _state = STATE_FREE_FALL;
                     _freeFallStart = now;
                 }
@@ -124,8 +159,7 @@ bool FallDetector::update(float accMag, float pitch, float roll) {
             if (accMag > 3.0f) {
                 _impactTime = now;
                 _state = STATE_IMPACT_CHECK;
-            }
-            if (now - _freeFallStart > 500) {
+            } else if (now - _freeFallStart > 500) {
                 _state = STATE_NORMAL;
                 _freeFallCount = 0;
             }
@@ -135,8 +169,7 @@ bool FallDetector::update(float accMag, float pitch, float roll) {
             if (fabsf(pitch) > 45.0f || fabsf(roll) > 45.0f) {
                 _postFallStart = now;
                 _state = STATE_POST_FALL_WAIT;
-            }
-            if (now - _impactTime > 3000) {
+            } else if (now - _impactTime > 3000) {
                 _state = STATE_NORMAL;
                 _freeFallCount = 0;
             }
@@ -145,12 +178,10 @@ bool FallDetector::update(float accMag, float pitch, float roll) {
         case STATE_POST_FALL_WAIT:
             if (now - _postFallStart > 500) {
                 _state = STATE_POST_FALL_ALERT;
-            }
-            if (fabsf(pitch) < 30.0f && fabsf(roll) < 30.0f) {
+            } else if (fabsf(pitch) < 30.0f && fabsf(roll) < 30.0f) {
                 _state = STATE_NORMAL;
                 _freeFallCount = 0;
-            }
-            if (now - _impactTime > 5000) {
+            } else if (now - _impactTime > 5000) {
                 _state = STATE_NORMAL;
                 _freeFallCount = 0;
             }
@@ -187,7 +218,7 @@ MotionStateRecognizer::MotionStateRecognizer()
 /**
  * 运动状态识别更新
  *
- * 计算滑动窗口内的加速度RMS值，按阈值分类
+ * 计算滑动窗口内的加速度标准差（StdDev），消除静态重力直流残余后按阈值分类
  */
 MotionType MotionStateRecognizer::update(float ax, float ay, float az) {
     // 计算当前样本的合加速度
@@ -198,19 +229,27 @@ MotionType MotionStateRecognizer::update(float ax, float ay, float az) {
     _bufferIndex = (_bufferIndex + 1) % WINDOW_SIZE;
     if (_bufferCount < WINDOW_SIZE) _bufferCount++;
 
-    // 计算窗口内RMS
+    // 计算窗口内均值
     float sum = 0;
     for (int i = 0; i < _bufferCount; i++) {
-        sum += _buffer[i] * _buffer[i];
+        sum += _buffer[i];
     }
-    float rms = sqrtf(sum / _bufferCount);
+    float mean = sum / (float)_bufferCount;
 
-    // 按阈值分类
-    if (rms < 0.15f) {
+    // 计算窗口内标准差
+    float sqDiffSum = 0;
+    for (int i = 0; i < _bufferCount; i++) {
+        float diff = _buffer[i] - mean;
+        sqDiffSum += diff * diff;
+    }
+    float stdDev = sqrtf(sqDiffSum / (float)_bufferCount);
+
+    // 按体感优化的标准差阈值分类：静止<0.08g, 轻度<0.25g, 中度<0.65g, 剧烈>=0.65g
+    if (stdDev < 0.08f) {
         _currentState = MOTION_IDLE;
-    } else if (rms < 0.30f) {
+    } else if (stdDev < 0.25f) {
         _currentState = MOTION_LIGHT;
-    } else if (rms < 0.80f) {
+    } else if (stdDev < 0.65f) {
         _currentState = MOTION_MODERATE;
     } else {
         _currentState = MOTION_VIGOROUS;

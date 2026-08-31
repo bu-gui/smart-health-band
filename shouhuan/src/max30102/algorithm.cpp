@@ -6,7 +6,7 @@
 HeartRateAlgorithm::HeartRateAlgorithm()
     : _lastIR(0), _beatState(0), _samplesSinceBeat(0), _samplesSinceReset(0), _peakValue(0), _troughValue(0),
       _rateIndex(0), _lastBeatTime(0),
-      _dcFilter(0.995f), _lpFilter(0.8f) {
+      _dcFilter(0.98f), _lpFilter(0.8f) {
     for (int i = 0; i < 10; i++) {
         _rates[i] = 0;
     }
@@ -61,14 +61,15 @@ int HeartRateAlgorithm::checkForBeat(long irValue) {
             _beatState = 0;
             _samplesSinceBeat = 0;
         }
-        if (_samplesSinceBeat > 500) {
+        if (_samplesSinceBeat > 400) {
             static int timeoutCount = 0;
             timeoutCount++;
             if (timeoutCount <= 3 || timeoutCount % 50 == 0) {
-                Serial.printf("[HR_ALGO] 状态机超时#%d: peak=%ld trough=%ld range=%ld lastIR=%ld cur=%ld need<%ld\n",
-                    timeoutCount, _peakValue, _troughValue, signalRange, _lastIR, cleanSignal,
-                    _lastIR - signalRange / 8);
+                Serial.printf("[HR_ALGO] 状态机超时自愈#%d: 极值重置 peak=%ld trough=%ld -> cur=%ld\n",
+                    timeoutCount, _peakValue, _troughValue, cleanSignal);
             }
+            _peakValue = cleanSignal + 200;
+            _troughValue = cleanSignal - 200;
             _beatState = 0;
             _samplesSinceBeat = 0;
         }
@@ -88,19 +89,6 @@ int HeartRateAlgorithm::calculateHeartRate(long delta) {
         int bpm = 60000 / delta;        // 毫秒转换为BPM
 
         if (bpm >= 40 && bpm <= 200) {  // 有效心率范围
-            // 异常值过滤：与最近一次有效心率比较
-            int lastValid = 0;
-            for (int i = 1; i <= 10; i++) {
-                int idx = (_rateIndex - i + 10) % 10;  // 从最新位置倒序查找
-                if (_rates[idx] > 0) {
-                    lastValid = _rates[idx];
-                    break;
-                }
-            }
-            if (lastValid > 0 && abs(bpm - lastValid) > lastValid * 0.3f) {
-                return lastValid;   // 异常跳变，保持上次有效值
-            }
-
             _rates[_rateIndex] = bpm;   // 存入环形缓冲区
             _rateIndex = (_rateIndex + 1) % 10;
 
@@ -114,7 +102,8 @@ int HeartRateAlgorithm::calculateHeartRate(long delta) {
                 }
             }
 
-            if (count > 0) {
+            // 预热保护：刚贴合皮肤收集到的有效心拍样本少于 3 个时，基线尚在平稳期，暂不输出心率
+            if (count >= 3) {
                 return sum / count;     // 返回滑动平均结果
             }
         }
@@ -122,7 +111,7 @@ int HeartRateAlgorithm::calculateHeartRate(long delta) {
 
     return 0;  // 无效间隔返回0
 }
-
+ 
 void HeartRateAlgorithm::reset(long initialDC) {
     _lastIR = 0;
     _beatState = 0;
@@ -173,7 +162,7 @@ int SpO2Algorithm::calculate(int red, int ir, bool fingerOn) {
  *   R = (Red_AC / Red_DC) / (IR_AC / IR_DC)
  *   其中 AC 通过RMS计算，DC 通过均值计算
  *
- * 关键修复：使用int64_t累加平方和，避免32位溢出
+ * 关键修复：使用int64_t累加平方和，避免32位溢出；增加除零保护
  */
 int SpO2Algorithm::calculateFromBuffer(long* redBuffer, long* irBuffer, int bufferSize, bool fingerOn) {
     if (!fingerOn || bufferSize == 0) return 0;
@@ -199,8 +188,11 @@ int SpO2Algorithm::calculateFromBuffer(long* redBuffer, long* irBuffer, int buff
     float redRMS = sqrt((float)redSqSum / bufferSize);
     float irRMS = sqrt((float)irSqSum / bufferSize);
 
+    // 除零/无动态信号防护
+    if (irRMS <= 0.0001f || redRMS <= 0.0001f) return 0;
+
     // 计算R值（AC/DC归一化后再比值）
-    float R = (redRMS / redDC) / (irRMS / irDC);
+    float R = (redRMS / (float)redDC) / (irRMS / (float)irDC);
 
     // 经验公式：SpO2 = 110 - 25 * R
     int spo2 = (int)(110.0f - 25.0f * R);

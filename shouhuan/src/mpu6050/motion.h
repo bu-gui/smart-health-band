@@ -39,6 +39,12 @@ public:
     /** 获取累计步数 */
     int getSteps() const { return _steps; }
 
+    /** 获取候选脉冲计数（0-3缓冲中，>=4为建立） */
+    int getCandidateSteps() const { return _candidateSteps; }
+
+    /** 获取步态是否已连续建立 */
+    bool isEstablished() const { return _isEstablished; }
+
     /** 重置计步器 */
     void reset();
 
@@ -50,10 +56,14 @@ private:
     int _state;                // 状态机(0=等待, 1=上升过阈值, 2=下降过阈值)
     float _threshold;          // 当前动态阈值
     float _peakValues[5];      // 最近5个峰值环形缓冲
+    float _currentPeakMax;     // 波峰区域追踪的极大值
     int _peakIndex;            // 峰值缓冲区索引
     int _peakCount;            // 峰值有效计数
     unsigned long _lastStepTime; // 上一步时间戳
+    unsigned long _state1StartTime; // 状态1进入时间戳（防止卡死超时）
     float _lastAccMag;         // 上一次合加速度值
+    int _candidateSteps;       // 候选脉冲连续计数（甩手防误触）
+    bool _isEstablished;       // 连续步态是否已确认（连续3步以上）
 };
 
 /**

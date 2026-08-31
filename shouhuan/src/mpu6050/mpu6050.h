@@ -81,6 +81,10 @@ public:
         _pedometer.setSteps(s);
     }
 
+    /** 获取计步器连续步态候选状态 */
+    int getPedometerCandidate() const { return _pedometer.getCandidateSteps(); }
+    bool isPedometerEstablished() const { return _pedometer.isEstablished(); }
+
     /**
      * 重置所有运动算法状态
      * 包括重力估计、姿态角、计步器、跌倒检测

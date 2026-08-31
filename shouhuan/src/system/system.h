@@ -93,7 +93,7 @@ private:
     void pushCommand(const String& cmd, const String& arg);
 
     unsigned long bootTime;
-    long timeOffset;
+    volatile long timeOffset;
     bool measuring;
 
     int batteryLevel;

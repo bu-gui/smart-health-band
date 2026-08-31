@@ -44,8 +44,8 @@
 #define NVS_NAMESPACE "shb"           //!< NVS 命名空间
 #define NVS_KEY_STEPS "steps"         //!< 步数存储键
 #define NVS_KEY_TS_OFFSET "tsoff"     //!< 时间偏移存储键
-#define STEPS_SAVE_THRESHOLD 10       //!< 步数每次写入的增量阈值
-#define STEPS_SAVE_INTERVAL 30000     //!< 步数写入最大间隔（毫秒）
+#define STEPS_SAVE_THRESHOLD 50        //!< 步数每次写入的增量阈值（大幅降低 Flash 磨损）
+#define STEPS_SAVE_INTERVAL 300000     //!< 步数写入最大间隔（5 分钟 = 300,000 毫秒）
 /** @} */
 /** @} */
 
