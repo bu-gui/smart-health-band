@@ -83,3 +83,4 @@
 | 2026-08-30 | 重建缺失文档（protocol/building/roadmap/checklist/closed_loop） | 本批 |
 | 2026-08-31 | 心率 PPG 自愈(69bpm/159假拍/SQI锁)、黄金计步器(0.22g/3步确认/踱步超时)与运动识别阈值重构 | 编译通过 |
 | 2026-08-31 | 修复 I2C 50ms 超时自愈、NVS Flash 擦写保护(50步/5分钟)与 BleService 句柄全释放 3 大 Critical 隐患 | 双端 0 Error |
+| 2026-09-01 | SQI 信号质量一阶 EMA 平滑去闪烁、App 3 大数据治理 BUG 修复(运动时长/60、脱腕0值过滤、ts=0 1970年戳保护) | analyze/compile 0 Error |

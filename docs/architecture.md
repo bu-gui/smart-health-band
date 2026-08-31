@@ -336,6 +336,8 @@ SpO2 = 110 - 25 × R
 | 电池低电量阈值 | <3.3V | 固件 `power_manager.cpp` |
 | I2C 硬件超时与自愈 | 50 ms 超时，10 次 NACK 自动总线复位 | 固件 `max30102.cpp` / `mpu6050.cpp` |
 | NVS Flash 擦写保护 | 增量 ≥50 步 或 间隔 ≥5 分钟 (300000ms) | `config.h` / `main.cpp` |
+| SQI 信号质量平滑 | 一阶 EMA 低通平滑 ($\alpha=0.85$) + 首帧直达 | 固件 `algorithm.cpp` |
+| App 数据库数据治理 | 运动时长 /60 换算分钟、MIN/AVG 过滤 0 值、未同步时间戳 (ts<2020年) 防误删 | App `database_service.dart` |
 
 ---
 
