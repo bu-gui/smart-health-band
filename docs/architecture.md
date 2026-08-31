@@ -310,13 +310,12 @@ SpO2 = 110 - 25 × R
 │   └── architecture.md         # 本文档
 ├── shouhuan/                   # 固件工程
 │   ├── platformio.ini
-│   └── src/
-│       ├── main.cpp
-│       ├── config.h
-│       └── {button,display,max30102,mpu6050,power_manager,system}/
+│   ├── src/                    # 固件业务源码
+│   └── test/                   # 固件算法纯 C++ 仿真单元测试资产 (mock_arduino.h + test_firmware_sim.cpp)
 └── smart_health_app/           # Flutter 工程
     ├── pubspec.yaml
-    └── lib/  (models/services/providers/pages/widgets/utils)
+    ├── lib/                    # Flutter App 源码 (models/services/providers/pages/widgets/utils)
+    └── test/                   # App 数据库数据治理单元测试资产 (database_governance_test.dart)
 ```
 
 ---

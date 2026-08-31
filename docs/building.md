@@ -40,27 +40,42 @@ flutter run                    # 在默认设备运行
 
 ---
 
-## 4. 常见坑
+## 4. 纯软件单元测试与仿真 (电脑端无硬件校验)
 
-### 4.1 `flutter` 不在 PATH
+无需连接硬件，直接在电脑命令行运行单元测试，验证核心算法与 SQLite 数据库治理逻辑：
+
+```powershell
+# 1. 固件 C++ 算法 Python/C++ 本地仿真测试 (防甩手计步/连续补齐/SQI EMA平滑去跳变)
+python scratch/test_firmware_sim.py
+
+# 2. App 数据库数据治理单元测试 (内存 SQLite 验证 运动时长/60换算、脱腕0值过滤、ts=0未同步时间戳防护)
+cd smart_health_app
+flutter test test/database_governance_test.dart
+```
+
+---
+
+## 5. 常见坑
+
+### 5.1 `flutter` 不在 PATH
 用完整路径：`D:\huan_jing\flutter\bin\flutter.bat`，或把 `D:\huan_jing\flutter\bin` 加入用户 PATH。
 
-### 4.2 中文用户名导致 Android 构建失败（重要）
+### 5.2 中文用户名导致 Android 构建失败（重要）
 
 - **现象**：`flutter build apk` 报 `source file or directory not found: C:\Users\u5F52\AppData\...`（`\u5F52` 即中文「归」）。
 - **根因**：Windows 用户目录含中文，Gradle/Kotlin 编译原生依赖错误转义路径。
 - **解决**：设用户变量 `PUB_CACHE=D:\huan_jing\pub_cache`、`GRADLE_USER_HOME=D:\huan_jing\gradle_home`，重新 `flutter clean + pub get + build`。
 
-### 4.3 `android/local.properties` 的 ndk.dir
+### 5.3 `android/local.properties` 的 ndk.dir
 曾指向旧路径 `D:\007\...`，需改为有效 NDK（如 `C:\Users\...\Sdk\ndk\<版本>`）或删除让 AGP 自动用 SDK 的 NDK。
 
-### 4.4 固件烧录失败
+### 5.4 固件烧录失败
 - 检查串口驱动（CH340/CP210x/原生 USB）、选对串口号与波特率（upload_speed=921600，可临时调低）；
 - 烧录时按住开发板 BOOT 键。
 
 ---
 
-## 5. 一键验证流程
+## 6. 一键验证流程
 
 ```powershell
 # 固件
