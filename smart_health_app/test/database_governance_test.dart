@@ -14,6 +14,14 @@ void main() {
     dbService = DatabaseService();
   });
 
+  // 每个测试前清空所有表，避免跨测试/跨运行残留污染（此前用共享文件库导致断言不稳定）
+  setUp(() async {
+    final db = await dbService.database;
+    await db.delete('health_records');
+    await db.delete('daily_summaries');
+    await db.delete('user_settings');
+  });
+
   group('App 3 大数据治理单元测试集', () {
     test('【场景 3】运动时长 /60 换算准确性断言 (防 60 倍放大 BUG)', () async {
       const dateStr = '2026-09-01';
