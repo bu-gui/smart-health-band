@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/device_info.dart';
 import '../services/ble_service.dart';
 import '../utils/permissions_helper.dart';
@@ -22,6 +24,9 @@ class BleState {
   /// 设备信息
   final DeviceInfo deviceInfo;
 
+  /// 已连接设备的 RSSI 信号强度
+  final int connectedRssi;
+
   /// 错误信息
   final String? errorMessage;
 
@@ -33,6 +38,7 @@ class BleState {
     this.scanResults = const [],
     this.connectedDevice,
     this.deviceInfo = const DeviceInfo(),
+    this.connectedRssi = -100,
     this.errorMessage,
     this.permissionsPermanentlyDenied = false,
   });
@@ -43,6 +49,7 @@ class BleState {
     List<ScanResult>? scanResults,
     BluetoothDevice? connectedDevice,
     DeviceInfo? deviceInfo,
+    int? connectedRssi,
     String? errorMessage,
     bool clearError = false,
     bool clearDevice = false,
@@ -55,6 +62,7 @@ class BleState {
           ? null
           : (connectedDevice ?? this.connectedDevice),
       deviceInfo: deviceInfo ?? this.deviceInfo,
+      connectedRssi: connectedRssi ?? this.connectedRssi,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       permissionsPermanentlyDenied:
           permissionsPermanentlyDenied ?? this.permissionsPermanentlyDenied,
@@ -171,10 +179,17 @@ class BleNotifier extends StateNotifier<BleState> {
     await startScan();
   }
 
-  /// 读取设备信息
+  /// 读取设备信息及动态 RSSI
   Future<void> _readDeviceInfo() async {
     final info = await _bleService.readDeviceInfo();
-    state = state.copyWith(deviceInfo: info);
+    final rssi = await _bleService.readRssi();
+    state = state.copyWith(deviceInfo: info, connectedRssi: rssi);
+  }
+
+  /// 动态刷新当前连接设备的 RSSI
+  Future<void> refreshRssi() async {
+    final rssi = await _bleService.readRssi();
+    state = state.copyWith(connectedRssi: rssi);
   }
 
   /// 重置步数

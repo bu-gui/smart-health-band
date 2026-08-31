@@ -360,6 +360,7 @@ void MAX30102Module::processSingleSample(long red, long ir, unsigned long curren
             hrAlgo.reset();
             fingerDetect.reset();
             motionFilter.reset();
+            sigQuality.reset();
 
             // 重置滤波器预热状态
             _filterWarmupCount = 0;

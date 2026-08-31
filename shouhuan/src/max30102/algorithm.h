@@ -138,14 +138,22 @@ private:
  */
 class SignalQuality {
 public:
+    SignalQuality();
+
     /**
      * 评估信号质量
-     * 综合评估：幅度评分 × 周期性评分
+     * 综合评估：幅度评分 × 周期性评分（附带 EMA 平滑去闪烁）
      * @param irBuffer 红外信号缓冲区
      * @param bufferSize 缓冲区大小
      * @return 信号质量分数(0-100)，0=无信号，100=信号最佳
      */
     int evaluate(long* irBuffer, int bufferSize);
+
+    /** 重置平滑状态 */
+    void reset();
+
+private:
+    float _smoothedScore; // 平滑后的信号质量，消除 40ms 局部窗口导致的高频锯齿跳变
 };
 
 #endif

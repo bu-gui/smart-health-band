@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers/ble_provider.dart';
 import '../utils/app_colors.dart';
 import '../utils/permissions_helper.dart';
@@ -212,6 +213,12 @@ class DevicePage extends ConsumerWidget {
                     _buildInfoRow('固件版本', bleState.deviceInfo.firmwareVersion),
                     _buildInfoRow('硬件版本', bleState.deviceInfo.hardwareVersion),
                     _buildInfoRow('序列号', bleState.deviceInfo.serialNumber),
+                    _buildInfoRow(
+                      '信号强度',
+                      bleState.connectedRssi != -100
+                          ? '${bleState.connectedRssi} dBm'
+                          : '正常',
+                    ),
                   ],
                 ),
               ),

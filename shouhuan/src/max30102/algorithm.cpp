@@ -279,18 +279,23 @@ void FingerDetector::reset() {
 
 // ==================== 信号质量评估实现 ====================
 
+SignalQuality::SignalQuality() : _smoothedScore(0.0f) {}
+
+void SignalQuality::reset() {
+    _smoothedScore = 0.0f;
+}
+
 /**
- * 评估信号质量
+ * 评估信号质量（附带 EMA 低通平滑去闪烁）
  *
- * 评估标准基于幅度评分与周期性评分的乘积：
- *   - 幅度评分：AC/DC 百分比，信号越强得分越高
- *   - 周期性评分：基于过零率的规则性检测，排除随机噪声
- *
- * 在高速采样（800Hz）下，32个样本仅覆盖40ms，
- * 不足以评估周期性的情况下，仅用幅度评分。
+ * 评估标准基于 AC/DC 比率，并经 EMA 慢速平滑，
+ * 消除 40ms 局部小窗口交替跨越波峰/波谷导致的锯齿跳变。
  */
 int SignalQuality::evaluate(long* irBuffer, int bufferSize) {
-    if (bufferSize < 2) return 0;
+    if (bufferSize < 2) {
+        _smoothedScore = 0.0f;
+        return 0;
+    }
 
     long minVal = 0x7FFFFFFF;
     long maxVal = 0;
@@ -307,9 +312,15 @@ int SignalQuality::evaluate(long* irBuffer, int bufferSize) {
         }
     }
 
-    if (validCount == 0) return 0;
+    if (validCount == 0) {
+        _smoothedScore = 0.8f * _smoothedScore;
+        return (int)_smoothedScore;
+    }
     long dc = sum / validCount;
-    if (dc < MIN_IR_VALUE) return 0;
+    if (dc < MIN_IR_VALUE) {
+        _smoothedScore = 0.8f * _smoothedScore;
+        return (int)_smoothedScore;
+    }
 
     long ac = maxVal - minVal;
     float ratio = (float)ac / (float)dc * 100.0f;
@@ -322,8 +333,14 @@ int SignalQuality::evaluate(long* irBuffer, int bufferSize) {
     else if (ratio < 10.0f) baseScore = 90;
     else baseScore = 100;
 
-    // 在不合适的时间尺度上评估周期性反而产生误导。
-    // 当采样率高于3×预期心率频率时（800Hz > 3×1.25Hz），
-    // 32样本窗口太小，跳过周期性计算。
-    return constrain(baseScore, 0, 100);
+    int rawScore = constrain(baseScore, 0, 100);
+
+    // EMA 慢速一阶低通平滑，解决手指贴稳时 SQI 在 10 和 80 之间交替剧烈锯齿跳动的问题
+    if (_smoothedScore == 0.0f) {
+        _smoothedScore = (float)rawScore;
+    } else {
+        _smoothedScore = 0.85f * _smoothedScore + 0.15f * (float)rawScore;
+    }
+
+    return constrain((int)_smoothedScore, 0, 100);
 }

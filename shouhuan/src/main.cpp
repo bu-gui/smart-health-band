@@ -172,10 +172,12 @@ void loop() {
     // 步数增量持久化（防 NVS 频繁写入磨损，增量>=50步或间隔>=5分钟才擦写 Flash）
     static int lastSavedSteps = -1;
     static unsigned long lastSaveTime = 0;
-    if (lastSavedSteps == -1 ||
-        (motionData.steps != lastSavedSteps &&
-         (motionData.steps - lastSavedSteps >= STEPS_SAVE_THRESHOLD ||
-          (lastSaveTime != 0 && now - lastSaveTime >= STEPS_SAVE_INTERVAL)))) {
+    if (lastSavedSteps == -1) {
+        lastSavedSteps = motionData.steps; // 开机首帧同步已恢复的步数，杜绝无故擦写 Flash
+        lastSaveTime = now;
+    } else if (motionData.steps != lastSavedSteps &&
+        (motionData.steps - lastSavedSteps >= STEPS_SAVE_THRESHOLD ||
+         (lastSaveTime != 0 && now - lastSaveTime >= STEPS_SAVE_INTERVAL))) {
         prefs.begin(NVS_NAMESPACE, false);
         prefs.putInt(NVS_KEY_STEPS, motionData.steps);
         prefs.end();

@@ -69,7 +69,22 @@ class DatabaseService {
 
   Future<int> insertHealthRecord(HealthRecord record) async {
     final db = await database;
-    return db.insert('health_records', record.toMap());
+    var finalRecord = record;
+    // 防御：当手环未同步时间（ts < 2020年戳）时，使用手机本地真实时间戳，防止 1970 年记录污染数据库并被 90 天清理误删
+    if (finalRecord.timestamp < 1600000000) {
+      finalRecord = HealthRecord(
+        id: record.id,
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        heartRate: record.heartRate,
+        spo2: record.spo2,
+        steps: record.steps,
+        motionState: record.motionState,
+        isFallAlert: record.isFallAlert,
+        signalQuality: record.signalQuality,
+        battery: record.battery,
+      );
+    }
+    return db.insert('health_records', finalRecord.toMap());
   }
 
   Future<List<HealthRecord>> getHealthRecords({
@@ -249,13 +264,13 @@ class DatabaseService {
     final db = await database;
     final maps = await db.rawQuery('''
       SELECT
-        AVG(heart_rate) as avg_hr,
-        MIN(heart_rate) as min_hr,
-        MAX(heart_rate) as max_hr,
-        AVG(spo2) as avg_spo2,
-        MIN(spo2) as min_spo2,
+        AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_hr,
+        MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_hr,
+        MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_hr,
+        AVG(CASE WHEN spo2 >= 70 THEN spo2 END) as avg_spo2,
+        MIN(CASE WHEN spo2 >= 70 THEN spo2 END) as min_spo2,
         MAX(steps) as total_steps,
-        SUM(CASE WHEN motion_state >= 1 THEN 1 ELSE 0 END) * 2 as exercise_minutes,
+        CAST(SUM(CASE WHEN motion_state >= 1 THEN 1 ELSE 0 END) * 2 / 60 AS INTEGER) as exercise_minutes,
         SUM(CASE WHEN is_fall_alert = 1 THEN 1 ELSE 0 END) as fall_count,
         SUM(CASE WHEN spo2 > 0 AND spo2 < 95 THEN 1 ELSE 0 END) as low_spo2_count
       FROM health_records
