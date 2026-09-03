@@ -5,7 +5,7 @@
 
 HeartRateAlgorithm::HeartRateAlgorithm()
     : _lastIR(0), _beatState(0), _samplesSinceBeat(0), _samplesSinceReset(0), _peakValue(0), _troughValue(0),
-      _rateIndex(0), _lastBeatTime(0),
+      _rateIndex(0), _lastBeatTime(0), _lastBeatRefractory(0),
       _dcFilter(0.98f), _lpFilter(0.8f) {
     for (int i = 0; i < 10; i++) {
         _rates[i] = 0;
@@ -18,14 +18,9 @@ HeartRateAlgorithm::HeartRateAlgorithm()
  * 信号处理链路：
  * rawIR → DCRemovalFilter(去DC提取AC) → LowPassFilter(去噪) → 动态阈值峰值检测
  *
- * 峰值/谷值追踪使用指数衰减法（与MAX30102Module::processSingleSample中的
- * irACMax/irACMin机制相同）：
- *   - 每帧对峰值做轻微衰减(×0.999)，谷值做轻微增长(×1.001)
- *   - 用硬比较捕获新的极值
- *   - 这样signalRange由近期信号决定，不会因一次reset后归零
- *     导致后续threshold = cleanSignal而无法再触发
- *
- * 安全超时：DC爬坡期可能假触发beat，若500样本未完成周期则强制复位状态
+ * 关键修复：
+ * 1. 极值平滑收敛：正负极值统一使用 * 0.995f 向零点收敛，彻底消除负极值暴跌发散问题
+ * 2. 独立不期锁：使用 _lastBeatRefractory (250ms 锁定) 隔离同帧 0.0s 假心跳，与外部 _lastBeatTime 彻底解耦
  */
 int HeartRateAlgorithm::checkForBeat(long irValue) {
     _samplesSinceReset++;
@@ -34,9 +29,9 @@ int HeartRateAlgorithm::checkForBeat(long irValue) {
     long acSignal = _dcFilter.process(irValue);
     long cleanSignal = _lpFilter.process(acSignal);
 
-    // ====== 指数衰减追踪峰谷值（永不硬重置，自适应追踪信号变化） ======
-    _peakValue = (long)(_peakValue * 0.999f);
-    _troughValue = (long)(_troughValue * 1.001f);
+    // ====== 指数衰减追踪峰谷值（正负极值统一向零点收缩，彻底防负数暴跌发散） ======
+    _peakValue = (long)(_peakValue * 0.995f);
+    _troughValue = (long)(_troughValue * 0.995f);
     if (_troughValue > _peakValue) {
         long mid = (_peakValue + _troughValue) / 2;
         _peakValue = mid;
@@ -49,10 +44,14 @@ int HeartRateAlgorithm::checkForBeat(long irValue) {
     long threshold = _troughValue + signalRange * 3 / 4;
 
     if (_beatState == 0) {
-        if (cleanSignal > threshold && cleanSignal > _troughValue + signalRange / 8) {
+        unsigned long now = millis();
+        bool refractoryPassed = (_lastBeatRefractory == 0) || (now - _lastBeatRefractory >= 250);
+
+        if (refractoryPassed && cleanSignal > threshold && cleanSignal > _troughValue + signalRange / 8) {
             _lastIR = cleanSignal;
             _beatState = 1;
             _samplesSinceBeat = 0;
+            _lastBeatRefractory = now;
             return 1;
         }
     } else {
@@ -111,7 +110,7 @@ int HeartRateAlgorithm::calculateHeartRate(long delta) {
 
     return 0;  // 无效间隔返回0
 }
- 
+
 void HeartRateAlgorithm::reset(long initialDC) {
     _lastIR = 0;
     _beatState = 0;
@@ -121,6 +120,7 @@ void HeartRateAlgorithm::reset(long initialDC) {
     _troughValue = 0;
     _rateIndex = 0;
     _lastBeatTime = 0;
+    _lastBeatRefractory = 0;
     for (int i = 0; i < 10; i++) {
         _rates[i] = 0;
     }

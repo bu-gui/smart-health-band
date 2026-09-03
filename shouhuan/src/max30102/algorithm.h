@@ -62,7 +62,8 @@ private:
     long _troughValue;      // 当前周期内的信号谷值
     int _rates[10];         // 最近10次心率值环形缓冲区，用于滑动平均
     int _rateIndex;         // 心率值环形缓冲区写入索引
-    long _lastBeatTime;     // 上一次心跳发生的时间戳(毫秒)
+    long _lastBeatTime;     // 上一次心跳发生的时间戳(毫秒)，用于计算两次心拍间隔 delta
+    unsigned long _lastBeatRefractory; // 不应期时间戳(毫秒)，独立用于 checkForBeat 不期锁解耦
 };
 
 /**
